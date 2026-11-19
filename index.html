@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070B17" />
+    <meta name="description" content="Smart Emergency Response & Green Corridor System with real-time FCM push notifications." />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Smart Emergency Response System</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/firebase-messaging-sw.js')
+            .then((reg) => console.log('FCM Service Worker registered:', reg.scope))
+            .catch((err) => console.warn('FCM Service Worker registration failed:', err));
+        });
+      }
+    </script>
+  </body>
+</html>
+

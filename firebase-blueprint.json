@@ -1,0 +1,128 @@
+{
+  "entities": {
+    "Hospital": {
+      "title": "Hospital",
+      "description": "Represents a hospital with bed availability and location.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the hospital." },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          },
+          "required": ["lat", "lng"]
+        },
+        "totalBeds": { "type": "integer" },
+        "availableBeds": { "type": "integer" },
+        "emergencyServices": { "type": "array", "items": { "type": "string" } },
+        "contact": { "type": "string" }
+      },
+      "required": ["name", "location", "totalBeds", "availableBeds"]
+    },
+    "Ambulance": {
+      "title": "Ambulance",
+      "description": "Represents an ambulance vehicle and its status.",
+      "type": "object",
+      "properties": {
+        "driverName": { "type": "string" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          },
+          "required": ["lat", "lng"]
+        },
+        "status": { "type": "string", "enum": ["idle", "responding", "transporting"] },
+        "currentEmergencyId": { "type": "string" },
+        "uid": { "type": "string", "description": "Auth UID of the ambulance operator." }
+      },
+      "required": ["driverName", "location", "status", "uid"]
+    },
+    "Emergency": {
+      "title": "Emergency",
+      "description": "Represents an active medical emergency case.",
+      "type": "object",
+      "properties": {
+        "ambulanceId": { "type": "string" },
+        "hospitalId": { "type": "string" },
+        "patientInfo": { "type": "string" },
+        "emergencyType": { "type": "string" },
+        "eta": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "active", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ambulanceId", "hospitalId", "status", "createdAt"]
+    },
+    "TrafficSignal": {
+      "title": "TrafficSignal",
+      "description": "Represents a traffic signal that can be coordinated.",
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          },
+          "required": ["lat", "lng"]
+        },
+        "status": { "type": "string", "enum": ["normal", "emergency-green"] },
+        "activeAmbulanceId": { "type": "string" }
+      },
+      "required": ["location", "status"]
+    },
+    "EmergencyRequest": {
+      "title": "EmergencyRequest",
+      "description": "Represents a real-time emergency bed reservation request sent from an ambulance to a hospital.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "ambulanceId": { "type": "string" },
+        "patientId": { "type": "string" },
+        "hospitalId": { "type": "string" },
+        "emergencyType": { "type": "string" },
+        "severity": { "type": "string", "enum": ["critical", "high", "moderate"] },
+        "requiredDepartment": { "type": "string" },
+        "patientCondition": { "type": "string" },
+        "notes": { "type": "string" },
+        "ambulanceLocation": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "etaMins": { "type": "integer" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "bed_reserved", "arrived", "admitted", "cancelled", "expired"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ambulanceId", "patientId", "hospitalId", "emergencyType", "severity", "requiredDepartment", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/hospitals/{hospitalId}": {
+      "schema": "Hospital",
+      "description": "Collection of hospitals."
+    },
+    "/ambulances/{ambulanceId}": {
+      "schema": "Ambulance",
+      "description": "Collection of ambulances."
+    },
+    "/emergencies/{emergencyId}": {
+      "schema": "Emergency",
+      "description": "Collection of emergency cases."
+    },
+    "/emergencyRequests/{requestId}": {
+      "schema": "EmergencyRequest",
+      "description": "Collection of real-time emergency bed reservation requests."
+    },
+    "/trafficSignals/{signalId}": {
+      "schema": "TrafficSignal",
+      "description": "Collection of traffic signals."
+    }
+  }
+}

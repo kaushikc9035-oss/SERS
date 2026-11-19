@@ -1,0 +1,5 @@
+{
+  "name": "Smart Emergency Response System",
+  "description": "A real-time platform connecting ambulances, hospitals, and traffic control to optimize emergency medical response and patient transport.",
+  "requestFramePermissions": ["geolocation"]
+}

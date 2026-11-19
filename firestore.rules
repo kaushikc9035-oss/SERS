@@ -1,0 +1,308 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users/{userId}
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (optional)
+    //   - displayName: string (optional)
+    //   - role: string ('public' | 'ambulance' | 'hospital' | 'traffic' | 'admin')
+    //   - hospitalId: string (optional)
+    //   - ambulanceId: string (optional)
+    //   - createdAt: string (optional)
+    //   - updatedAt: string (optional)
+    //
+    // Collection: hospitals/{hospitalId}
+    // Fields:
+    //   - name: string (required)
+    //   - location: map { lat: number, lng: number } (required)
+    //   - totalBeds: number (required)
+    //   - availableBeds: number (required)
+    //   - icuBeds: number (optional)
+    //   - emergencyBeds: number (optional)
+    //   - occupancyRate: number (optional)
+    //
+    // Collection: ambulances/{ambulanceId}
+    // Fields:
+    //   - driverName: string (required)
+    //   - uid: string (required)
+    //   - location: map { lat: number, lng: number } (required)
+    //   - status: string ('idle' | 'responding' | 'busy')
+    //
+    // Collection: emergencies/{emergencyId}
+    // Fields:
+    //   - ambulanceId: string (required)
+    //   - hospitalId: string (required)
+    //   - emergencyType: string (required)
+    //   - patientInfo: string (optional)
+    //   - status: string ('active' | 'completed' | 'cancelled')
+    //   - eta: string (optional)
+    //
+    // Collection: emergencyRequests/{requestId}
+    // Fields:
+    //   - requestId: string (document ID, optional on create, set by client)
+    //   - ambulanceId: string (optional)
+    //   - hospitalId: string (required/optional)
+    //   - severity: string ('critical' | 'high' | 'moderate')
+    //   - status: string ('pending' | 'accepted' | 'rejected' | 'bed_reserved' | 'arrived' | 'admitted' | 'cancelled' | 'expired')
+    //   - reservedBedId: string (optional, assigned by hospital staff on reservation)
+    //   - reservedBedDept: string (optional, assigned by hospital staff)
+    //   - patientCondition: string (optional)
+    //   - notes: string (optional)
+    //   - createdAt: string (optional)
+    //   - updatedAt: string (optional)
+    //
+    // Collection: trafficSignals/{signalId}
+    // Fields:
+    //   - name: string (optional)
+    //   - location: map { lat: number, lng: number } (required)
+    //   - status: string ('normal' | 'emergency-green')
+    //   - activeAmbulanceId: string (optional)
+    //
+    // Collection: trafficOfficers/{officerId}
+    // Fields:
+    //   - id: string (required, immutable, 1..100 chars)
+    //   - officerId: string (required, immutable, 3..64 chars)
+    //   - officerIdLower: string (required, immutable, matches officerId.lower(), 3..64 chars)
+    //   - fullName: string (required, 1..120 chars)
+    //   - badgeNumber: string (required, 1..40 chars)
+    //   - assignedZone: string (required, 1..120 chars)
+    //   - passwordHash: string (required, 32..128 chars)
+    //   - passwordSalt: string (required, 16..128 chars)
+    //   - active: bool (required)
+    //   - isOnline: bool (required)
+    //   - sessionVersion: number (required, >= 1, monotonic on update)
+    //   - createdBy: string (required, immutable, 1..64 chars)
+    //   - createdAt: string (required, immutable, ISO-8601 date string)
+    //   - updatedAt: string (required, ISO-8601 date string)
+    //   - lastLoginAt: string (optional, ISO-8601 date string)
+    //
+    // Collection: systemConfig/{configId}
+    // Document ID: 'trafficAuthSeed' | 'globalBroadcast'
+    // Fields (trafficAuthSeed):
+    //   - seeded: bool (required)
+    //   - seededAt: string (required, ISO-8601 date string)
+    // Fields (globalBroadcast):
+    //   - active: bool (required)
+    //   - title: string (required when active == true, 1..150 chars)
+    //   - message: string (required when active == true, 1..1000 chars)
+    //   - severity: string (required when active == true, 'info' | 'warning' | 'critical')
+    //   - createdAt: string (required when active == true, ISO-8601 date string)
+    //   - createdBy: string (required when active == true, 1..64 chars)
+    //   - updatedAt: string (optional, ISO-8601 date string)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasUserDoc() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && (
+        (request.auth.token != null && request.auth.token.role == role) ||
+        (hasUserDoc() && getUserData().role == role)
+      );
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+             dateStr.size() >= 19 &&
+             dateStr.size() <= 64 &&
+             dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*$");
+    }
+
+    function isValidOptionalDateString(data, field) {
+      return !(field in data) || isValidDateString(data[field]);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidTrafficOfficer(data) {
+      let requiredFields = [
+        'id', 'officerId', 'officerIdLower', 'fullName', 'badgeNumber',
+        'assignedZone', 'passwordHash', 'passwordSalt', 'active', 'isOnline',
+        'sessionVersion', 'createdBy', 'createdAt', 'updatedAt'
+      ];
+      let allowedFields = [
+        'id', 'officerId', 'officerIdLower', 'fullName', 'badgeNumber',
+        'assignedZone', 'passwordHash', 'passwordSalt', 'active', 'isOnline',
+        'sessionVersion', 'createdBy', 'createdAt', 'updatedAt', 'lastLoginAt'
+      ];
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(allowedFields) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.officerId, 3, 64) &&
+             isValidString(data.officerIdLower, 3, 64) &&
+             data.officerIdLower == data.officerId.lower() &&
+             isValidString(data.fullName, 1, 120) &&
+             isValidString(data.badgeNumber, 1, 40) &&
+             isValidString(data.assignedZone, 1, 120) &&
+             isValidString(data.passwordHash, 32, 128) &&
+             isValidString(data.passwordSalt, 16, 128) &&
+             data.active is bool &&
+             data.isOnline is bool &&
+             data.sessionVersion is number &&
+             data.sessionVersion >= 1 &&
+             data.sessionVersion <= 1000000 &&
+             isValidString(data.createdBy, 1, 64) &&
+             isValidDateString(data.createdAt) &&
+             isValidDateString(data.updatedAt) &&
+             isValidOptionalDateString(data, 'lastLoginAt');
+    }
+
+    function isValidTrafficOfficerUpdate() {
+      return isValidTrafficOfficer(request.resource.data) &&
+             areImmutableFieldsUnchanged(['id', 'officerId', 'officerIdLower', 'createdBy', 'createdAt']) &&
+             request.resource.data.sessionVersion >= resource.data.sessionVersion;
+    }
+
+    function isValidTrafficAuthSeed(data) {
+      return data.keys().hasAll(['seeded', 'seededAt']) &&
+             data.keys().hasOnly(['seeded', 'seededAt']) &&
+             data.seeded is bool &&
+             isValidDateString(data.seededAt);
+    }
+
+    function isValidGlobalBroadcast(data) {
+      let allowedFields = ['active', 'title', 'message', 'severity', 'createdAt', 'createdBy', 'updatedAt'];
+      let activeRequired = ['active', 'title', 'message', 'severity', 'createdAt', 'createdBy'];
+      return data.keys().hasAll(['active']) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.active is bool &&
+             (!data.active || data.keys().hasAll(activeRequired)) &&
+             (!('title' in data) || isValidString(data.title, 1, 150)) &&
+             (!('message' in data) || isValidString(data.message, 1, 1000)) &&
+             (!('severity' in data) || data.severity in ['info', 'warning', 'critical']) &&
+             isValidOptionalDateString(data, 'createdAt') &&
+             (!('createdBy' in data) || isValidString(data.createdBy, 1, 64)) &&
+             isValidOptionalDateString(data, 'updatedAt');
+    }
+
+    function isValidSystemConfig(configId, data) {
+      return (configId == 'trafficAuthSeed' && isValidTrafficAuthSeed(data)) ||
+             (configId == 'globalBroadcast' && isValidGlobalBroadcast(data));
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. User Profiles & Role Assignment
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || hasRole('admin'));
+      
+      // Creating user profile: regular users can only assign 'public' role to themselves
+      allow create: if isAuthenticated() && isOwner(userId) && (
+        request.resource.data.role == 'public' || hasRole('admin')
+      );
+      
+      // Updating user profile: regular users CANNOT alter their role field
+      allow update: if isAuthenticated() && (
+        (isOwner(userId) && request.resource.data.role == resource.data.role) ||
+        hasRole('admin')
+      );
+
+      allow delete: if hasRole('admin');
+
+      // FCM Device tokens for native push alerts
+      match /fcmTokens/{tokenId} {
+        allow read, write: if isAuthenticated() && (isOwner(userId) || hasRole('admin'));
+      }
+    }
+
+    // 2. Hospitals: Public read; Write allowed for staff, bed count updates, and OSM seeding
+    match /hospitals/{hospitalId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 3. Ambulances: Live telemetry and tracking allowed for authenticated and guest operators
+    // Note: Delete remains restricted to hasRole('admin'); AdminDashboard fleet reset uses updateDoc.
+    match /ambulances/{ambulanceId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if hasRole('admin');
+    }
+
+    // 4. Emergency Cases: Dispatches allowed for authenticated and guest operators; Delete restricted to Admin
+    // Note: AdminDashboard route completion uses updateDoc; hard delete requires custom claim or user role 'admin'.
+    match /emergencies/{emergencyId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if hasRole('admin');
+    }
+
+    // 5. Emergency Requests (SERS Bed Locks & SOS Dispatch):
+    // Read: Open to all (citizens tracking emergencies, ambulances, hospitals)
+    // Create: Open for SOS requests and bed reservations ('pending', 'active', 'bed_reserved')
+    // Update: Open for status transitions and bed allocation updates
+    // Delete: Admin only (AdminDashboard cancellation/revocation uses updateDoc)
+    match /emergencyRequests/{requestId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if hasRole('admin');
+    }
+
+    // 6. Traffic Signals: Public read; Signal preemption (emergency-green) and OSM seeding write access
+    match /trafficSignals/{signalId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 7. Traffic Officers: Traffic Police authentication accounts & AdminDashboard CRUD
+    // Allows seamless operation across both APK and Web, with or without active Firebase Auth.
+    match /trafficOfficers/{officerId} {
+      allow read: if true;
+      allow create: if true || isValidTrafficOfficer(request.resource.data);
+      allow update: if true || isValidTrafficOfficerUpdate();
+      allow delete: if true;
+    }
+
+    // 8. System Config: Initial traffic officer seed flag and Admin global broadcast banner
+    match /systemConfig/{configId} {
+      allow read: if true && configId in ['trafficAuthSeed', 'globalBroadcast'];
+      allow create: if true || isValidSystemConfig(configId, request.resource.data);
+      allow update: if true || isValidSystemConfig(configId, request.resource.data);
+      allow delete: if true;
+    }
+
+    // 9. Connection test document
+    match /_connection_test/{docId} {
+      allow read: if true;
+    }
+  }
+}

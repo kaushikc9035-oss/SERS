@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "552192308744",
+    "project_id": "gen-lang-client-0091455757",
+    "storage_bucket": "gen-lang-client-0091455757.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:552192308744:android:6b7359e5123f9fea1f83bd",
+        "android_client_info": {
+          "package_name": "com.smartemergency.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "552192308744-cfh3h1ov9k2ck9463nsebv99n6cg1p25.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7wXEULv7ciAE3m-fXFSICHDQuv3GuRjU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "552192308744-cfh3h1ov9k2ck9463nsebv99n6cg1p25.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
