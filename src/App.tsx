@@ -1898,9 +1898,14 @@ export default function App() {
     setSyncError(null);
     setIsTracking(false);
 
-    // Reseed default Bengaluru components
-    await seedHospitals();
-    await seedTrafficSignals();
+    // Reseed default curated components around Central Bangalore (12.9716, 77.5946)
+    const res = await seedAroundLocation(12.9716, 77.5946);
+    if (res.hospitals && res.hospitals.length > 0) {
+      setHospitals(res.hospitals);
+    }
+    if (res.signals && res.signals.length > 0) {
+      setTrafficSignals(res.signals);
+    }
 
     // Reset my ambulance location to Bengaluru default
     if (myAmbulance) {
@@ -1938,18 +1943,15 @@ export default function App() {
       try {
         const savedLat = localStorage.getItem('emergency_gps_lat');
         const savedLng = localStorage.getItem('emergency_gps_lng');
-        if (savedLat && savedLng) {
-          const res = await seedAroundLocation(parseFloat(savedLat), parseFloat(savedLng));
-          if (res.hospitals && res.hospitals.length > 0) {
-            setHospitals(res.hospitals);
-          }
-          if (res.signals && res.signals.length > 0) {
-            setTrafficSignals(res.signals);
-          }
-        } else {
-          // Provide instant curated hospitals if Firestore empty
-          await seedHospitals().catch(() => {});
-          await seedTrafficSignals().catch(() => {});
+        const initialLat = savedLat ? parseFloat(savedLat) : 12.9716;
+        const initialLng = savedLng ? parseFloat(savedLng) : 77.5946;
+
+        const res = await seedAroundLocation(initialLat, initialLng);
+        if (res.hospitals && res.hospitals.length > 0) {
+          setHospitals(res.hospitals);
+        }
+        if (res.signals && res.signals.length > 0) {
+          setTrafficSignals(res.signals);
         }
       } catch (e) {
         console.error("Data seeding failed.", e);
@@ -2443,19 +2445,28 @@ export default function App() {
 
           // Calculate distance from current live location
           const distKm = calculateDistanceKm(curLat, curLng, h.location.lat, h.location.lng);
-          // Only accept hospitals in the regional vicinity of current position (<= 30 km)
-          if (distKm <= 30) {
+          // Only accept hospitals in the regional vicinity of current position (<= 15 km)
+          if (distKm <= 15) {
             dedupedNearby.push(h);
           }
         }
 
-        // If nearby hospitals found in DB, use them; otherwise preserve current local GPS hospitals
+        // Always sort by closest distance first
+        dedupedNearby.sort((a, b) => {
+          const dA = calculateDistanceKm(curLat, curLng, a.location.lat, a.location.lng);
+          const dB = calculateDistanceKm(curLat, curLng, b.location.lat, b.location.lng);
+          return dA - dB;
+        });
+
+        // If nearby hospitals found in DB, use them; otherwise immediately reseed tightly around current location
         if (dedupedNearby.length >= 2) {
           setHospitals(dedupedNearby);
-        } else if (hospitalsRef.current.length === 0) {
-          setHospitals(allFromDb.filter((h, idx, self) => 
-            idx === self.findIndex(t => t.name.toLowerCase().replace(/[^a-z0-9]/g, '') === h.name.toLowerCase().replace(/[^a-z0-9]/g, ''))
-          ));
+        } else {
+          seedAroundLocation(curLat, curLng).then(res => {
+            if (res.hospitals && res.hospitals.length > 0) {
+              setHospitals(res.hospitals);
+            }
+          }).catch(() => {});
         }
       },
       (err) => console.warn("Hospitals listener warning:", err.message)
@@ -4639,10 +4650,13 @@ function AmbulanceDashboard({
       };
     });
 
-    // If we have hospitals within 20 km, filter out hospitals farther than 25 km so distant test locations don't clutter the view
-    const hasNearbyFacilities = mapped.some(m => m.distKm <= 18);
+    // Always sort mapped hospitals strictly by closest distance first
+    mapped.sort((a, b) => a.distKm - b.distKm);
+
+    // If we have close facilities (within 7 km), filter out facilities farther than 10 km so only close hospitals show
+    const hasNearbyFacilities = mapped.some(m => m.distKm <= 7);
     if (hasNearbyFacilities) {
-      return mapped.filter(m => m.distKm <= 25);
+      return mapped.filter(m => m.distKm <= 10);
     }
 
     return mapped;
