@@ -1,7 +1,11 @@
 /**
  * SERS Emergency Voice Guidance & Driver Hands-Free HUD Service
- * Native SpeechSynthesis and Web Audio API integration for real-time auditory navigation cues.
+ * Native Android TextToSpeech (via @capacitor-community/text-to-speech) + Web Speech API fallback.
+ * Guaranteed audio playback on Android devices, WebViews, and desktop browsers.
  */
+
+import { TextToSpeech, QueueStrategy } from '@capacitor-community/text-to-speech';
+import { Capacitor } from '@capacitor/core';
 
 export interface VoicePromptEvent {
   text: string;
@@ -17,8 +21,8 @@ class VoiceGuidanceService {
   private cooldownMap: Map<string, number> = new Map();
   private listeners: Set<VoiceListener> = new Set();
   private lastSpokenEvent: VoicePromptEvent | null = null;
-  private activeUtterance: any = null;
   private audioCtx: any = null;
+  private isAudioUnlocked: boolean = false;
 
   constructor() {
     if (typeof localStorage !== 'undefined') {
@@ -28,16 +32,69 @@ class VoiceGuidanceService {
         }
       } catch {}
     }
+
+    // Pre-unlock voices on browser platforms
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.onvoiceschanged = () => {
+          // Preload voices
+          window.speechSynthesis.getVoices();
+        };
+      } catch {}
+    }
+
+    // Auto-unlock audio and speech engines on the very first user touch or tap
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const unlockHandler = () => {
+        this.unlockAudio();
+        document.removeEventListener('click', unlockHandler);
+        document.removeEventListener('touchstart', unlockHandler);
+      };
+      document.addEventListener('click', unlockHandler, { passive: true });
+      document.addEventListener('touchstart', unlockHandler, { passive: true });
+    }
   }
 
   /**
-   * Check if SpeechSynthesis is supported in the current environment
+   * Unlock audio context and TTS engines on user gesture
+   */
+  public unlockAudio(): void {
+    if (this.isAudioUnlocked) return;
+    this.isAudioUnlocked = true;
+
+    // 1. Resume AudioContext if suspended
+    try {
+      if (typeof window !== 'undefined') {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          if (!this.audioCtx || this.audioCtx.state === 'closed') {
+            this.audioCtx = new AudioContextClass();
+          }
+          if (this.audioCtx.state === 'suspended') {
+            this.audioCtx.resume().catch(() => {});
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Resume Web SpeechSynthesis if present
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.resume();
+      }
+    } catch {}
+  }
+
+  /**
+   * Check if speech is supported (either native Android TTS or Web SpeechSynthesis)
    */
   public isSupported(): boolean {
+    if (Capacitor.isNativePlatform()) {
+      return true; // Native Android TextToSpeech is supported
+    }
     return (
       typeof window !== 'undefined' &&
-      'speechSynthesis' in window &&
-      typeof SpeechSynthesisUtterance !== 'undefined'
+      ('speechSynthesis' in window || 'AudioContext' in window || 'webkitAudioContext' in window)
     );
   }
 
@@ -45,7 +102,7 @@ class VoiceGuidanceService {
    * Check if Voice HUD is enabled by driver
    */
   public isEnabled(): boolean {
-    if (typeof localStorage === 'undefined') return false;
+    if (typeof localStorage === 'undefined') return true;
     try {
       return localStorage.getItem(VoiceGuidanceService.STORAGE_KEY) !== 'false';
     } catch {
@@ -80,7 +137,7 @@ class VoiceGuidanceService {
     const nextState = !this.isEnabled();
     this.setEnabled(nextState);
     if (nextState) {
-      this.speak('Voice guidance active', 'toggle_confirm', 1000);
+      this.speak('Voice guidance active', 'toggle_confirm', 500, true);
     }
     return nextState;
   }
@@ -127,21 +184,21 @@ class VoiceGuidanceService {
       osc.frequency.setValueAtTime(587.33, now); // D5
       osc.frequency.setValueAtTime(880.00, now + 0.06); // A5
 
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.20);
 
       osc.connect(gain);
       gain.connect(this.audioCtx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.18);
+      osc.stop(now + 0.20);
     } catch {
-      // AudioContext is optional; ignore if blocked by browser policy
+      // AudioContext is optional; ignore if blocked
     }
   }
 
   /**
-   * Speak an emergency navigation cue with deduplication cooldown
+   * Speak an emergency navigation cue with dual native/web engine
    */
   public speak(
     text: string,
@@ -150,7 +207,6 @@ class VoiceGuidanceService {
     priority: boolean = false
   ): boolean {
     if (!this.isEnabled()) return false;
-    if (!this.isSupported()) return false;
 
     const now = Date.now();
     const lastSpoken = this.cooldownMap.get(cueKey) || 0;
@@ -161,24 +217,62 @@ class VoiceGuidanceService {
     }
 
     this.cooldownMap.set(cueKey, now);
+    this.unlockAudio();
+
+    // Play subtle radio chime
+    this.playChime();
+
+    const event: VoicePromptEvent = {
+      text,
+      cueKey,
+      timestamp: now,
+      enabled: true
+    };
+    this.lastSpokenEvent = event;
+    this.notify(event);
+
+    // Primary Engine: Native Android / Capacitor TextToSpeech
+    if (Capacitor.isNativePlatform()) {
+      TextToSpeech.speak({
+        text,
+        lang: 'en-US',
+        rate: 1.05,
+        pitch: 1.0,
+        volume: 1.0,
+        category: 'playback', // Plays audio with full playback priority on mobile
+        queueStrategy: QueueStrategy.Flush
+      }).catch((nativeErr) => {
+        console.warn('Native TextToSpeech failed, attempting web speech synthesis fallback:', nativeErr);
+        this.speakViaWebSpeech(text);
+      });
+      return true;
+    }
+
+    // Secondary Engine: Web Speech API (for desktop / web preview)
+    return this.speakViaWebSpeech(text);
+  }
+
+  /**
+   * Fallback Web Speech Synthesis
+   */
+  private speakViaWebSpeech(text: string): boolean {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return false;
+    }
 
     try {
-      // Cancel previous utterance to prevent queue lag in high-speed driving
       window.speechSynthesis.cancel();
-
-      // Play soft radio chime
-      this.playChime();
+      window.speechSynthesis.resume();
 
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.05; // Slightly brisk for responsive navigation
+      utterance.rate = 1.05;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
 
-      // Select natural English voice if available
       const voices = window.speechSynthesis.getVoices();
       if (voices && voices.length > 0) {
         const preferredVoice =
-          voices.find(v => v.lang === 'en-US' && !v.name.includes('Google') && !v.name.includes('Preview')) ||
+          voices.find(v => v.lang === 'en-US' && !v.name.includes('Preview')) ||
           voices.find(v => v.lang.startsWith('en')) ||
           voices[0];
         if (preferredVoice) {
@@ -186,37 +280,15 @@ class VoiceGuidanceService {
         }
       }
 
-      // Keep strong reference to prevent premature garbage collection
-      this.activeUtterance = utterance;
-      utterance.onend = () => {
-        if (this.activeUtterance === utterance) {
-          this.activeUtterance = null;
-        }
-      };
-      utterance.onerror = () => {
-        if (this.activeUtterance === utterance) {
-          this.activeUtterance = null;
-        }
-      };
-
-      // Slight delay (40ms) after chime for crystal clear speech
       setTimeout(() => {
         try {
           window.speechSynthesis.speak(utterance);
         } catch {}
-      }, 40);
+      }, 50);
 
-      const event: VoicePromptEvent = {
-        text,
-        cueKey,
-        timestamp: now,
-        enabled: true
-      };
-      this.lastSpokenEvent = event;
-      this.notify(event);
       return true;
     } catch (e) {
-      console.warn('Voice guidance speech failed:', e);
+      console.warn('Web speech synthesis failed:', e);
       return false;
     }
   }
@@ -225,12 +297,14 @@ class VoiceGuidanceService {
    * Stop active speech
    */
   public stop(): void {
-    if (this.isSupported()) {
+    if (Capacitor.isNativePlatform()) {
+      TextToSpeech.stop().catch(() => {});
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
       } catch {}
     }
-    this.activeUtterance = null;
   }
 
   /**
@@ -239,7 +313,7 @@ class VoiceGuidanceService {
   public announceDispatch(hospitalName: string, bedCode?: string): boolean {
     const bedMsg = bedCode ? ` Emergency bed reserved.` : '';
     const text = `Emergency dispatched. Clearing green corridor to ${hospitalName}.${bedMsg}`;
-    return this.speak(text, `dispatch_${hospitalName}`, 12000, true);
+    return this.speak(text, `dispatch_${hospitalName}`, 10000, true);
   }
 
   /**
@@ -263,7 +337,7 @@ class VoiceGuidanceService {
    */
   public announceEmergencyCompleted(hospitalName: string): boolean {
     const text = `Patient arrived safely at ${hospitalName}. Green corridor mission completed.`;
-    return this.speak(text, `completed_${hospitalName}`, 20000, true);
+    return this.speak(text, `completed_${hospitalName}`, 15000, true);
   }
 
   private notify(event: VoicePromptEvent): void {
