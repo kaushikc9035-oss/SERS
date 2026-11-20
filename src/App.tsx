@@ -1392,23 +1392,23 @@ function EmergencyMap({
             </button>
 
             <div className="space-y-1.5 text-slate-300">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" /> 
                 <span className="font-medium">Hospital Facility</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-sm shadow-red-500/50" /> 
                 <span className="font-medium">Active Ambulance</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50" /> 
                 <span className="font-medium">Traffic Signal (Normal)</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50" /> 
                 <span className="font-medium">Preemption Corridor</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="w-8 h-1 bg-red-500 rounded-full animate-pulse" /> 
                 <span className="font-medium">OSM Route Path</span>
               </div>
@@ -1983,6 +1983,15 @@ export default function App() {
     timestamp?: number;
   } | null>(null);
 
+  // Auto-dismiss floating corridor banner after 9 seconds so it never gets stuck
+  useEffect(() => {
+    if (!activeCorridorBanner) return;
+    const timer = setTimeout(() => {
+      setActiveCorridorBanner(null);
+    }, 9000);
+    return () => clearTimeout(timer);
+  }, [activeCorridorBanner]);
+
   // Traffic Police Officer Authentication State (ID & Password Only — No Fingerprint Required)
   const [policeOfficerAuth, setPoliceOfficerAuth] = useState<PoliceOfficerSession>(() => {
     if (typeof window !== 'undefined') {
@@ -2400,9 +2409,11 @@ export default function App() {
     }
 
     // 2. Check traffic signals that have been preempted to emergency-green in Firestore (100% public)
+    // ALERT ONLY ONCE for the entire green corridor, never 8 times in a row!
     const preemptedSignals = trafficSignals.filter(s => s.status === 'emergency-green');
-    for (const sig of preemptedSignals) {
-      const alertKey = `signal_${sig.id}`;
+    if (preemptedSignals.length > 0) {
+      const sig = preemptedSignals[0];
+      const alertKey = `signal_${sig.activeAmbulanceId || 'active_corridor'}`;
       if (!alertedCorridorKeysRef.current.has(alertKey)) {
         alertedCorridorKeysRef.current.add(alertKey);
         const amb = ambulances.find(a => a.id === sig.activeAmbulanceId);
@@ -3031,18 +3042,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#070B17] text-slate-100 font-sans selection:bg-red-500/30 selection:text-white">
       {/* Sticky Enterprise Command Navbar */}
-      <header className="bg-[#111827]/90 backdrop-blur-md border-b border-[#1F2937] sticky top-0 z-[2000] shadow-2xl">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
+      <header className="bg-[#111827]/95 backdrop-blur-md border-b border-[#1F2937] sticky top-0 z-[2000] shadow-2xl w-full max-w-full overflow-hidden box-border">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-4 md:px-6 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-3 w-full min-w-0">
           {/* Left: Logo & Brand */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setRole(null)}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-700 flex items-center justify-center shadow-lg shadow-red-500/20">
-              <Siren className="w-5 h-5 text-white animate-pulse" />
+          <div className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink min-w-0" onClick={() => setRole(null)}>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-700 flex items-center justify-center shadow-lg shadow-red-500/20 shrink-0">
+              <Siren className="w-4 h-4 sm:w-5 sm:h-5 text-white animate-pulse" />
             </div>
-            <div>
-              <span className="font-extrabold text-lg tracking-tight text-white flex items-center gap-1.5">
-                SmartResponse <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-mono uppercase">Command</span>
+            <div className="min-w-0 truncate">
+              <span className="font-extrabold text-sm sm:text-lg tracking-tight text-white flex items-center gap-1 sm:gap-1.5 truncate">
+                SmartResponse <span className="text-[9px] sm:text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1 sm:px-1.5 py-0.2 rounded font-mono uppercase shrink-0">Command</span>
               </span>
-              <span className="text-[10px] text-slate-400 block font-mono">City Emergency Grid v2.4</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-400 hidden xs:block font-mono truncate">City Emergency Grid v2.4</span>
             </div>
           </div>
           
@@ -3055,15 +3066,15 @@ export default function App() {
           </div>
 
           {/* Right: Live Meta Info & Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* Live Clock Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 bg-[#070B17] px-3 py-1 rounded-xl border border-[#1F2937] text-xs font-mono text-slate-300">
+            <div className="hidden md:flex items-center gap-1.5 bg-[#070B17] px-3 py-1 rounded-xl border border-[#1F2937] text-xs font-mono text-slate-300">
               <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
               <span>{currentTime || '12:00:00 PM'}</span>
             </div>
 
             {/* GPS Location Status Badge */}
-            <div className="hidden md:flex items-center gap-1.5 bg-[#070B17] px-3 py-1 rounded-xl border border-[#1F2937] text-xs text-slate-300">
+            <div className="hidden lg:flex items-center gap-1.5 bg-[#070B17] px-3 py-1 rounded-xl border border-[#1F2937] text-xs text-slate-300">
               <MapPin className={cn("w-3.5 h-3.5 shrink-0", isSyncedWithGps ? "text-emerald-400" : "text-amber-400")} />
               <span>{isSyncedWithGps ? "Device GPS Active" : "Bengaluru Demo Grid"}</span>
             </div>
@@ -3073,7 +3084,7 @@ export default function App() {
               type="button"
               onClick={() => setSimulateOffline(!simulateOffline)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer shadow-sm",
+                "flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-bold border transition-all cursor-pointer shadow-sm shrink-0",
                 effectiveIsOnline
                   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/20 group"
                   : "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/20"
@@ -3083,8 +3094,8 @@ export default function App() {
               {effectiveIsOnline ? (
                 <>
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                  <span className="group-hover:hidden">Connected</span>
-                  <span className="hidden group-hover:inline">Simulate Outage</span>
+                  <span className="hidden xs:inline group-hover:hidden">Connected</span>
+                  <span className="hidden group-hover:inline">Outage</span>
                 </>
               ) : (
                 <>
@@ -3096,25 +3107,25 @@ export default function App() {
 
             {/* Police Officer Status Badge / Login Button */}
             {policeOfficerAuth.isLoggedIn ? (
-              <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-xl text-xs shadow-sm">
+              <div className="flex items-center gap-1 sm:gap-1.5 bg-amber-500/10 border border-amber-500/30 px-2 sm:px-2.5 py-1 rounded-xl text-[11px] sm:text-xs shadow-sm max-w-[130px] sm:max-w-none shrink-0">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                 <span className="font-bold text-amber-300 hidden sm:inline">Officer:</span>
-                <span className="font-extrabold text-white">{policeOfficerAuth.username}</span>
-                <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 px-1 py-0.5 rounded border border-amber-500/20">{policeOfficerAuth.badgeNumber}</span>
+                <span className="font-extrabold text-white truncate max-w-[45px] sm:max-w-none">{policeOfficerAuth.username}</span>
+                <span className="text-[9px] sm:text-[10px] font-mono text-amber-300 bg-amber-950/60 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 hidden xs:inline">{policeOfficerAuth.badgeNumber || 'TP'}</span>
                 <button
                   type="button"
                   onClick={handlePoliceLogout}
-                  className="text-slate-400 hover:text-red-400 text-[10px] underline ml-1 cursor-pointer"
+                  className="text-slate-400 hover:text-red-400 text-[10px] font-bold p-0.5 ml-0.5 cursor-pointer shrink-0"
                   title="Sign Out Officer"
                 >
-                  Logout
+                  ✕
                 </button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setShowPoliceLoginModal(true)}
-                className="text-xs font-bold text-amber-400 hover:text-white px-2.5 py-1.5 rounded-xl border border-amber-500/30 hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                className="text-[11px] sm:text-xs font-bold text-amber-400 hover:text-white px-2 sm:px-2.5 py-1 rounded-xl border border-amber-500/30 hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 shadow-sm shrink-0"
                 title="Police Officer Temp Login"
               >
                 <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -3125,29 +3136,28 @@ export default function App() {
 
             {/* Admin Status Badge / Login Button */}
             {adminAuth.isLoggedIn ? (
-              <div className="flex items-center gap-1.5 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1 rounded-xl text-xs shadow-sm">
+              <div className="flex items-center gap-1 sm:gap-1.5 bg-purple-500/10 border border-purple-500/30 px-2 sm:px-2.5 py-1 rounded-xl text-[11px] sm:text-xs shadow-sm max-w-[120px] sm:max-w-none shrink-0">
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse shrink-0" />
                 <span className="font-bold text-purple-300 hidden sm:inline">Admin:</span>
-                <span className="font-extrabold text-white">{adminAuth.username}</span>
+                <span className="font-extrabold text-white truncate max-w-[45px] sm:max-w-none">{adminAuth.username}</span>
                 <button
                   type="button"
                   onClick={handleAdminLogout}
-                  className="text-slate-400 hover:text-red-400 text-[10px] underline ml-1 cursor-pointer"
+                  className="text-slate-400 hover:text-red-400 text-[10px] font-bold p-0.5 ml-0.5 cursor-pointer shrink-0"
                   title="Sign Out Admin"
                 >
-                  Logout
+                  ✕
                 </button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setShowAdminLoginModal(true)}
-                className="text-xs font-bold text-purple-300 hover:text-white px-2.5 py-1.5 rounded-xl border border-purple-500/30 hover:bg-purple-500/20 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                className="hidden sm:flex text-xs font-bold text-purple-300 hover:text-white px-2.5 py-1.5 rounded-xl border border-purple-500/30 hover:bg-purple-500/20 transition-all cursor-pointer items-center gap-1.5 shadow-sm shrink-0"
                 title="Admin Command Temp Sign-In"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span className="hidden sm:inline">Admin Login</span>
-                <span className="sm:hidden">Admin</span>
+                <span>Admin</span>
               </button>
             )}
 
@@ -3156,7 +3166,7 @@ export default function App() {
               type="button"
               onClick={() => setShowBiometricSettingsModal(true)}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-sm",
+                "hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-sm shrink-0",
                 biometricEnabled
                   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
                   : "bg-[#070B17] text-slate-400 border-[#1F2937] hover:text-slate-200 hover:border-slate-600"
@@ -3164,7 +3174,7 @@ export default function App() {
               title="Biometric Fingerprint Security Settings"
             >
               <Fingerprint className={cn("w-3.5 h-3.5 shrink-0", biometricEnabled ? "text-emerald-400 animate-pulse" : "text-slate-400")} />
-              <span className="hidden sm:inline">{biometricEnabled ? "Biometrics ON" : "Biometrics"}</span>
+              <span>{biometricEnabled ? "Biometrics ON" : "Biometrics"}</span>
             </button>
 
             {/* User Profile / Logout */}
@@ -3243,7 +3253,7 @@ export default function App() {
             className="bg-rose-950/80 border-b border-rose-500/40 text-rose-100 z-[1910]"
           >
             <div className="max-w-7xl mx-auto px-4 md:px-6 py-2.5 flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <ShieldBan className="w-4 h-4 text-rose-400 shrink-0" />
                 <span className="font-semibold">{policeSessionNotice}</span>
               </div>
@@ -3312,31 +3322,31 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -30, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="fixed top-4 left-4 right-4 max-w-xl mx-auto z-[9999] bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white rounded-2xl p-4 shadow-2xl shadow-red-950/80 border-2 border-red-300 flex items-start justify-between gap-3 backdrop-blur-md"
+            className="fixed top-2 left-2 right-2 sm:top-4 sm:left-4 sm:right-4 max-w-xl mx-auto z-[9999] bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 shadow-2xl shadow-red-950/80 border-2 border-red-300 flex items-start justify-between gap-2 sm:gap-3 backdrop-blur-md overflow-hidden box-border"
           >
-            <div className="flex items-start gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center shrink-0 shadow-lg animate-pulse">
-                <Siren className="w-6 h-6 text-white" />
+            <div className="flex items-start gap-2 sm:gap-3.5 min-w-0 flex-1">
+              <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center shrink-0 shadow-lg animate-pulse mt-0.5">
+                <Siren className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="bg-white text-red-700 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <span className="bg-white text-red-700 text-[9px] sm:text-[10px] font-black px-1.5 sm:px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm shrink-0">
                     EMERGENCY CLEARANCE
                   </span>
-                  <h4 className="font-extrabold text-sm sm:text-base leading-tight drop-shadow">
+                  <h4 className="font-extrabold text-xs sm:text-sm leading-tight drop-shadow truncate max-w-full">
                     {activeCorridorBanner.title}
                   </h4>
                 </div>
-                <p className="text-xs sm:text-sm text-red-100 font-medium leading-snug">
+                <p className="text-[11px] sm:text-xs text-red-100 font-medium leading-snug break-words">
                   {activeCorridorBanner.bodyText}
                 </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-red-200">
-                  <span className="flex items-center gap-1 font-bold text-yellow-300">
-                    <Volume2 className="w-3.5 h-3.5 animate-pulse" />
-                    Audio Siren & Haptics Triggered
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-0.5 text-[10px] sm:text-[11px] text-red-200">
+                  <span className="flex items-center gap-1 font-bold text-yellow-300 shrink-0">
+                    <Volume2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-pulse" />
+                    Audio Siren Triggered
                   </span>
-                  <span>•</span>
-                  <span>Auto-preempting Traffic Signals</span>
+                  <span className="hidden sm:inline">•</span>
+                  <span className="hidden sm:inline">Preempting Signals</span>
                   {role !== 'traffic' && (
                     <button
                       type="button"
@@ -3344,9 +3354,9 @@ export default function App() {
                         setRole('traffic');
                         setActiveCorridorBanner(null);
                       }}
-                      className="ml-auto px-2.5 py-1 bg-white hover:bg-red-50 text-red-800 font-extrabold text-xs rounded-lg shadow transition cursor-pointer flex items-center gap-1"
+                      className="px-2 py-0.5 bg-white hover:bg-red-50 text-red-800 font-extrabold text-[10px] sm:text-xs rounded-lg shadow transition cursor-pointer flex items-center gap-1 shrink-0"
                     >
-                      Open Traffic Control →
+                      Traffic Control →
                     </button>
                   )}
                 </div>
@@ -3355,10 +3365,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveCorridorBanner(null)}
-              className="p-1.5 rounded-lg bg-black/25 hover:bg-black/40 text-white/90 hover:text-white transition-colors shrink-0 cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl bg-black/40 hover:bg-black/60 text-white transition-colors shrink-0 cursor-pointer self-start ml-1"
               aria-label="Dismiss banner"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </motion.div>
         )}
@@ -3644,7 +3654,7 @@ export default function App() {
                           <span className="text-xs font-bold text-purple-300">Admin Active:</span>
                           <span className="text-xs font-extrabold text-white">{adminAuth.username}</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => setRole('admin')}
@@ -3735,16 +3745,16 @@ export default function App() {
         ) : (
           /* Active Role View Header */
           <div className="space-y-6">
-            <div className="flex items-center justify-between bg-[#111827] px-5 py-3 rounded-2xl border border-[#1F2937]">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#111827] px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-2xl border border-[#1F2937] overflow-hidden">
               <button 
                 onClick={() => setRole(null)}
-                className="text-xs font-bold text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="text-xs font-bold text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
               >
                 ← Back to Command Overview
               </button>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Current Dashboard:</span>
-                <span className="text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 px-2.5 py-1 rounded-lg">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <span className="text-[11px] sm:text-xs text-slate-400">Current Dashboard:</span>
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg">
                   {role} Portal
                 </span>
               </div>
@@ -4618,7 +4628,47 @@ function AmbulanceDashboard({
         }
       }
     }
-  }, [activeEmergency?.id, liveLocation?.lat, liveLocation?.lng, currentAmbulance.location.lat, currentAmbulance.location.lng, hospitals, signals]);
+
+    // 3. Dynamic upcoming turn announcements along route
+    const route = activeEmergency.routeCoords;
+    if (route && route.length >= 3) {
+      let closestIdx = 0;
+      let minD = Infinity;
+      for (let i = 0; i < route.length; i++) {
+        const d = (route[i].lat - ambLat) ** 2 + (route[i].lng - ambLng) ** 2;
+        if (d < minD) {
+          minD = d;
+          closestIdx = i;
+        }
+      }
+
+      // Check upcoming vertices ahead of ambulance (closestIdx + 1 to closestIdx + 10)
+      for (let k = closestIdx + 1; k < Math.min(route.length - 1, closestIdx + 10); k++) {
+        const pPrev = route[k - 1];
+        const pCurr = route[k];
+        const pNext = route[k + 1];
+
+        const distM = parseFloat(calculateDistance(ambLat, ambLng, pCurr.lat, pCurr.lng)) * 1000;
+        // Announce when 60m to 260m ahead of turn
+        if (distM >= 60 && distM <= 260) {
+          const b1 = getCardinalDirection(pPrev.lat, pPrev.lng, pCurr.lat, pCurr.lng).bearing;
+          const b2 = getCardinalDirection(pCurr.lat, pCurr.lng, pNext.lat, pNext.lng).bearing;
+          const delta = ((b2 - b1 + 540) % 360) - 180;
+
+          if (Math.abs(delta) >= 35) {
+            let turnType: 'left' | 'right' | 'sharp_left' | 'sharp_right' | 'u_turn';
+            if (delta > 125) turnType = 'sharp_right';
+            else if (delta > 35) turnType = 'right';
+            else if (delta < -125) turnType = 'sharp_left';
+            else turnType = 'left';
+
+            voiceGuidance.announceUpcomingTurn(turnType, Math.round(distM));
+            break; // Announce nearest upcoming turn
+          }
+        }
+      }
+    }
+  }, [activeEmergency?.id, activeEmergency?.routeCoords, liveLocation?.lat, liveLocation?.lng, currentAmbulance.location.lat, currentAmbulance.location.lng, hospitals, signals]);
 
   // Trigger deduplicated proximity push notifications to upcoming signals when in active rescue mode
   useEffect(() => {
@@ -5097,7 +5147,7 @@ function AmbulanceDashboard({
                 <Siren className="w-6 h-6 text-red-500 animate-bounce" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-black uppercase tracking-wider text-red-400">Active Emergency Rescue Mission</span>
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
                   <span className="text-[10px] font-mono bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full font-bold">
@@ -5377,7 +5427,7 @@ function AmbulanceDashboard({
                 <Zap className="w-5 h-5 text-red-500 fill-red-500/20 animate-pulse" />
                 Dispatch Details for {selectedHospital.name}
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1.5">
                   <Bed className="w-3.5 h-3.5 text-emerald-400" />
                   {selectedHospital.availableBeds} Beds Avail
@@ -5785,7 +5835,7 @@ function AmbulanceDashboard({
                 : "bg-red-500/10 border-red-500/30"
             )}>
               <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Bed className={cn(
                     "w-5 h-5",
                     activeReq.status === 'bed_reserved' ? "text-emerald-400" : activeReq.status === 'pending' ? "text-amber-400 animate-pulse" : "text-red-400"
@@ -5850,7 +5900,7 @@ function AmbulanceDashboard({
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <Gauge className="w-4 h-4 text-red-500" /> Telematics Status
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* Hands-Free Voice Guidance Toggle Button */}
                 <button
                   type="button"
@@ -6104,7 +6154,7 @@ function HospitalDashboard({
               <p className="text-xs text-slate-400 mt-0.5">Atomic pre-arrival bed lock & triage confirmation</p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select 
                 value={selectedHospitalId}
                 onChange={(e) => setSelectedHospitalId(e.target.value)}
@@ -6262,7 +6312,7 @@ function HospitalDashboard({
                         <Activity className="w-6 h-6 animate-pulse" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <h4 className="font-extrabold text-white text-base">{alert.emergencyType}</h4>
                           <span className={cn(
                             "text-[10px] font-bold uppercase font-mono px-2 py-0.5 rounded-full border",
@@ -6295,7 +6345,7 @@ function HospitalDashboard({
                           Acknowledge Alert
                         </button>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="bg-emerald-500/10 text-emerald-400 text-xs font-bold px-3 py-2 rounded-xl border border-emerald-500/20 flex items-center gap-1.5 font-mono">
                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                             Trauma Team Ready
@@ -7013,7 +7063,7 @@ function TrafficDashboard({
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowFleetView(prev => !prev)}
@@ -7088,7 +7138,7 @@ function TrafficDashboard({
                     <p className="text-xs text-slate-400">Select any ambulance below to inspect live GPS location, speed, and hospital ETA.</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {focusedAmbulance && (
                     <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-xl">
                       Selected: {focusedAmbulance.driverName}
@@ -7172,7 +7222,7 @@ function TrafficDashboard({
                 return (
                   <div className="p-4 bg-[#070B17] rounded-2xl border border-red-500/30 space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1F2937] pb-2.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-bold text-slate-400">Inspecting Telemetry for:</span>
                         <span className="text-sm font-black text-white">{focusedAmbulance.driverName}</span>
                         <span className="text-[10px] font-mono bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30">
@@ -7833,7 +7883,7 @@ function AdminDashboard({
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-extrabold text-white">Master Admin Command Center</h2>
               <span className="text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full uppercase">
                 Full System Control
@@ -8379,7 +8429,7 @@ function AdminDashboard({
           <div className="bg-[#111827] p-6 rounded-2xl border border-[#1F2937] shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#1F2937] pb-4">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-base font-extrabold text-white flex items-center gap-2">
                     <Siren className="w-5 h-5 text-red-500 animate-pulse" />
                     Active Ambulance Dispatches & Fleet Routes
@@ -8439,7 +8489,7 @@ function AdminDashboard({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono font-bold text-xs text-white">
                               {amb?.driverName || emg.ambulanceId || 'Ambulance'}
                             </span>

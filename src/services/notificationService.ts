@@ -339,13 +339,17 @@ export const triggerTrafficCorridorAlert = async (
   const hosp = details.targetHospitalName || 'Hospital';
   const eta = details.etaMins || 2;
 
-  // Rate-limiting deduplication per specific ambulance and junction: 4 seconds
-  const dedupeKey = `${ambId}_${junction}`;
+  // STRICT USER REQUIREMENT: Exactly 1 notification per ambulance emergency run!
+  // Suppress repetitive notifications across multiple signals, waypoints, or telemetry updates.
+  const ambGlobalKey = `corridor_run_${ambId}`;
   const now = Date.now();
-  const lastFired = alertCooldownMap.get(dedupeKey) || 0;
-  if (now - lastFired < 4000) {
-    return false;
+  const lastGlobalAlert = alertCooldownMap.get(ambGlobalKey) || 0;
+  if (now - lastGlobalAlert < 60000) {
+    return false; // Already alerted for this active emergency run; do not spam
   }
+  alertCooldownMap.set(ambGlobalKey, now);
+
+  const dedupeKey = `${ambId}_${junction}`;
   alertCooldownMap.set(dedupeKey, now);
 
   const timeInfo = details.lastUpdated 

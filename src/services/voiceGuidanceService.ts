@@ -325,6 +325,20 @@ class VoiceGuidanceService {
   }
 
   /**
+   * Announce upcoming dynamic turn along the driving corridor
+   */
+  public announceUpcomingTurn(
+    turnType: 'left' | 'right' | 'slight_left' | 'slight_right' | 'sharp_left' | 'sharp_right',
+    distanceMeters: number,
+    roadName?: string
+  ): boolean {
+    const dirStr = turnType.replace('_', ' ');
+    const roadStr = roadName ? ` onto ${roadName}` : '';
+    const text = `In ${Math.round(distanceMeters)} meters, turn ${dirStr}${roadStr}. Green corridor confirmed.`;
+    return this.speak(text, `turn_${turnType}_${Math.round(distanceMeters / 100)}`, 14000);
+  }
+
+  /**
    * Announce hospital emergency bay arrival
    */
   public announceHospitalBayArrival(hospitalName: string, distanceMeters: number = 300): boolean {

@@ -70,6 +70,9 @@ describe('Voice Guidance Service Unit Tests', () => {
     const junctionSpoken = voiceGuidance.announceApproachingJunction('Silk Board Junction', 450);
     expect(typeof junctionSpoken).toBe('boolean');
 
+    const turnSpoken = voiceGuidance.announceUpcomingTurn('right', 180, 'Hosur Road');
+    expect(typeof turnSpoken).toBe('boolean');
+
     const arrivalSpoken = voiceGuidance.announceHospitalBayArrival('Apollo Hospital', 250);
     expect(typeof arrivalSpoken).toBe('boolean');
 
