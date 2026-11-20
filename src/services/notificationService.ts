@@ -314,6 +314,21 @@ const alertCooldownMap = new Map<string, number>();
 export const triggerTrafficCorridorAlert = async (
   details: EmergencyNotificationDetails
 ): Promise<boolean> => {
+  // STRICT USER REQUIREMENT: Green corridor alerts, sirens, and push notifications
+  // MUST arrive ONLY on devices actively logged into a Traffic Police Officer account.
+  // If this device is not logged in as a police officer (e.g. public citizen, hospital, or ambulance),
+  // suppress notifications, audio sirens, and floating banners completely.
+  if (typeof window !== 'undefined') {
+    try {
+      const rawAuth = localStorage.getItem('traffic_police_auth');
+      if (!rawAuth) return false;
+      const parsed = JSON.parse(rawAuth);
+      if (!parsed || !parsed.isLoggedIn) return false;
+    } catch {
+      return false;
+    }
+  }
+
   const ambId = details.ambulanceId ? `AMB-${details.ambulanceId.slice(-4).toUpperCase()}` : 'AMB-UNIT';
   const driver = details.ambulanceDriverName || 'Ambulance Unit';
   const latStr = details.ambulanceLocation ? details.ambulanceLocation.lat.toFixed(4) : '';

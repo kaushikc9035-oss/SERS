@@ -364,6 +364,23 @@ export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lo
   return parseFloat((R * c).toFixed(2));
 }
 
+/**
+ * String-formatted distance in kilometers (e.g. "14.28")
+ */
+export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): string {
+  return calculateDistanceKm(lat1, lon1, lat2, lon2).toFixed(2);
+}
+
+/**
+ * Normalizes and clamps GPS coordinates to valid geographical boundaries.
+ * Latitude must be within [-90, 90], Longitude within [-180, 180].
+ */
+export function normalizeCoordinates(lat: number, lng: number): { lat: number; lng: number } {
+  const clampedLat = Math.max(-90, Math.min(90, lat));
+  const clampedLng = Math.max(-180, Math.min(180, lng));
+  return { lat: clampedLat, lng: clampedLng };
+}
+
 const OPERATIONAL_DATA_CACHE_KEY = 'ERS_STABLE_HOSPITAL_OPERATIONAL_DATA_V2';
 
 export function getStableOperationalData(hospitalKey: string, hospitalName: string) {

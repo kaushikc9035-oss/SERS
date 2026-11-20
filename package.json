@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test": "vitest run tests/unit_test_cases.test.ts tests/trafficAuth.test.ts tests/verification.test.ts",
     "test:security": "npx --yes firebase-tools emulators:exec --only firestore \"vitest run tests/firestore.rules.test.ts\""
   },
   "dependencies": {

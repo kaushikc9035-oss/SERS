@@ -2200,10 +2200,11 @@ export default function App() {
     setPoliceOfficerAuth(emptyAuth);
     localStorage.removeItem(TRAFFIC_AUTH_STORAGE_KEY);
     
-    // 2. Clean up login modals, errors and session notices
+    // 2. Clean up login modals, errors, session notices and dismiss any corridor alert banner
     setPoliceLoginError(null);
     setPoliceSessionNotice(null);
     setShowPoliceLoginModal(false);
+    setActiveCorridorBanner(null);
 
     // 3. Prevent biometric launch lock from incorrectly triggering upon voluntary officer logout
     setIsBiometricUnlocked(true);
@@ -2339,6 +2340,8 @@ export default function App() {
 
   useEffect(() => {
     const handleCorridorAlert = (e: any) => {
+      // Guard: Only display in-app banner if an officer is actively logged in on this device
+      if (!policeOfficerAuthRef.current?.isLoggedIn) return;
       const detail = e.detail;
       if (detail) {
         setActiveCorridorBanner({
@@ -2354,19 +2357,19 @@ export default function App() {
     return () => window.removeEventListener('emergency-corridor-alert', handleCorridorAlert);
   }, []);
 
-  // Request notifications permission immediately when entering Traffic/Hospital role or if police is signed in
+  // Request notifications permission immediately ONLY when police officer is logged in
   useEffect(() => {
-    if (role === 'traffic' || role === 'hospital' || policeOfficerAuth.isLoggedIn) {
+    if (policeOfficerAuth.isLoggedIn) {
       initNotificationChannels().catch(() => {});
     }
-  }, [role, policeOfficerAuth.isLoggedIn]);
+  }, [policeOfficerAuth.isLoggedIn]);
 
   // Proactive Cross-Device Emergency Corridor Alert for 2-Device APK Synchronization
-  // Fires whenever an ambulance starts an emergency, whether traffic control panel is open or closed!
+  // Fires strictly ONLY on devices where a Traffic Police Officer is logged in
   const alertedCorridorKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const isPolice = policeOfficerAuth.isLoggedIn || role === 'traffic';
-    if (!isPolice && role !== 'hospital') return;
+    // STRICT GATE: Corridor alerts and sirens MUST ONLY trigger on logged-in officer devices
+    if (!policeOfficerAuth.isLoggedIn) return;
 
     // 1. Check active emergency requests from Firestore (100% public real-time collection)
     const activeReqs = emergencyRequests.filter(r => ['bed_reserved', 'pending', 'active'].includes(r.status));
@@ -2395,7 +2398,6 @@ export default function App() {
     // 2. Check traffic signals that have been preempted to emergency-green in Firestore (100% public)
     const preemptedSignals = trafficSignals.filter(s => s.status === 'emergency-green');
     for (const sig of preemptedSignals) {
-      if (!isPolice) continue;
       const alertKey = `signal_${sig.id}`;
       if (!alertedCorridorKeysRef.current.has(alertKey)) {
         alertedCorridorKeysRef.current.add(alertKey);
@@ -2484,8 +2486,8 @@ export default function App() {
             if (em.status === 'active') {
               const currentRole = roleRef.current;
               const currentMyAmb = myAmbulanceRef.current;
-              const isPolice = policeOfficerAuthRef.current.isLoggedIn || currentRole === 'traffic';
-              if (em.ambulanceId !== currentMyAmb?.id && (isPolice || currentRole === 'hospital')) {
+              const isOfficer = Boolean(policeOfficerAuthRef.current?.isLoggedIn);
+              if (em.ambulanceId !== currentMyAmb?.id && isOfficer) {
                 const amb = ambulancesRef.current.find(a => a.id === em.ambulanceId);
                 const hosp = hospitalsRef.current.find(h => h.id === em.hospitalId);
                 const pingTs = amb?.lastSeenTimestamp || 0;
@@ -2526,8 +2528,8 @@ export default function App() {
               activeAmbulanceSpeed?: number;
               targetHospitalName?: string;
             };
-            const isPolice = policeOfficerAuthRef.current.isLoggedIn || roleRef.current === 'traffic';
-            if (isPolice && sig.status === 'emergency-green') {
+            const isOfficer = Boolean(policeOfficerAuthRef.current?.isLoggedIn);
+            if (isOfficer && sig.status === 'emergency-green') {
               const amb = ambulancesRef.current.find(a => a.id === sig.activeAmbulanceId) || 
                           ambulancesRef.current.find(a => a.status === 'responding');
               const hospName = sig.targetHospitalName || amb?.targetHospitalName || 'Emergency Hospital';
@@ -2626,8 +2628,8 @@ export default function App() {
         if (activeReq) {
           const currentRole = roleRef.current;
           const currentMyAmb = myAmbulanceRef.current;
-          const isPolice = policeOfficerAuthRef.current.isLoggedIn || currentRole === 'traffic';
-          if (activeReq.ambulanceId !== currentMyAmb?.id && (isPolice || currentRole === 'hospital')) {
+          const isOfficer = Boolean(policeOfficerAuthRef.current?.isLoggedIn);
+          if (activeReq.ambulanceId !== currentMyAmb?.id && isOfficer) {
             const hospName = activeReq.hospitalName || hospitalsRef.current.find(h => h.id === activeReq.hospitalId)?.name || 'Emergency Hospital';
             triggerTrafficCorridorAlert({
               signalName: 'Active Green Corridor Junction',

@@ -279,6 +279,15 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * Verifies a plaintext password against a stored salt and expected SHA-256 hash
+ * using constant-time equality check to prevent timing side-channel attacks.
+ */
+export async function verifyTrafficPassword(password: string, salt: string, expectedHash: string): Promise<boolean> {
+  const computed = await hashOfficerPassword(password, salt);
+  return constantTimeEqual(computed, expectedHash);
+}
+
 export function normalizeOfficerDocId(officerId: string): string {
   const slug = officerId
     .trim()
