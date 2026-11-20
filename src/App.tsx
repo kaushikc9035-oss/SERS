@@ -72,6 +72,7 @@ import {
   Trash2,
   CheckCircle,
   Volume2,
+  VolumeX,
   Fingerprint,
   Lock,
   KeyRound,
@@ -178,6 +179,7 @@ import {
   publishGlobalBroadcast,
   clearGlobalBroadcast
 } from './services/trafficAuthService';
+import voiceGuidance, { VoicePromptEvent } from './services/voiceGuidanceService';
 
 // Google Maps Platform Imports
 import { 
@@ -4577,6 +4579,47 @@ function AmbulanceDashboard({
 
   const activeEmergency = emergencies.find(e => (e.ambulanceId === currentAmbulance.id || (ambulance && e.ambulanceId === ambulance.id)) && e.status === 'active');
 
+  // Hands-free Voice Guidance HUD state
+  const [voiceEnabled, setVoiceEnabled] = useState(() => voiceGuidance.isEnabled());
+  const [lastVoicePrompt, setLastVoicePrompt] = useState<VoicePromptEvent | null>(() => voiceGuidance.getLastEvent());
+
+  useEffect(() => {
+    const unsub = voiceGuidance.subscribe((evt) => {
+      setLastVoicePrompt(evt);
+      setVoiceEnabled(evt.enabled);
+    });
+    return () => unsub();
+  }, []);
+
+  // Voice Guidance: real-time proximity navigation cues during active emergency dispatch
+  useEffect(() => {
+    if (!activeEmergency) return;
+    const ambLat = liveLocation?.lat ?? currentAmbulance.location.lat;
+    const ambLng = liveLocation?.lng ?? currentAmbulance.location.lng;
+
+    // 1. Proximity to target hospital bay (within 350 meters)
+    const hosp = hospitals.find(h => h.id === activeEmergency.hospitalId);
+    if (hosp && hosp.location) {
+      const distHospKm = parseFloat(calculateDistance(ambLat, ambLng, hosp.location.lat, hosp.location.lng));
+      if (distHospKm <= 0.35) {
+        voiceGuidance.announceHospitalBayArrival(hosp.name, Math.round(distHospKm * 1000));
+      }
+    }
+
+    // 2. Proximity to upcoming traffic junctions within 800 meters
+    if (signals && signals.length > 0) {
+      for (const sig of signals) {
+        if (!sig.location) continue;
+        const distSigKm = parseFloat(calculateDistance(ambLat, ambLng, sig.location.lat, sig.location.lng));
+        if (distSigKm <= 0.8 && distSigKm >= 0.05) {
+          const juncName = (sig as any).name || (sig as any).intersectionName || `Junction ${sig.id.slice(-4)}`;
+          voiceGuidance.announceApproachingJunction(juncName, Math.round(distSigKm * 1000));
+          break;
+        }
+      }
+    }
+  }, [activeEmergency?.id, liveLocation?.lat, liveLocation?.lng, currentAmbulance.location.lat, currentAmbulance.location.lng, hospitals, signals]);
+
   // Trigger deduplicated proximity push notifications to upcoming signals when in active rescue mode
   useEffect(() => {
     if (!activeEmergency) return;
@@ -4965,6 +5008,7 @@ function AmbulanceDashboard({
       }
 
       setReservationNotice(`Dispatched to ${hosp.name}! ER bed ${bedCode} auto-reserved. Green corridor preempted.`);
+      voiceGuidance.announceDispatch(hosp.name, bedCode);
     } catch (e: any) {
       console.error("Failed to start emergency run:", e);
       setReservationNotice("Emergency dispatched! Telemetry active.");
@@ -4980,6 +5024,8 @@ function AmbulanceDashboard({
   const handleComplete = async () => {
     const amb = currentAmbulance;
     if (!activeEmergency) return;
+    const hosp = hospitals.find(h => h.id === activeEmergency.hospitalId);
+    voiceGuidance.announceEmergencyCompleted(hosp?.name || 'Emergency Bay');
     onEmergencyCompleted?.(activeEmergency.id);
     updateDoc(doc(db, 'emergencies', activeEmergency.id), { status: 'completed' }).catch(() => {});
     updateAmbulanceStatus(amb.id, 'idle', amb.location, { speed: 0, targetHospitalId: null, targetHospitalName: null }).catch(() => {});
@@ -5634,14 +5680,35 @@ function AmbulanceDashboard({
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <Gauge className="w-4 h-4 text-red-500" /> Telematics Status
             </h3>
-            <span className={cn(
-              "text-[10px] font-bold font-mono uppercase px-2.5 py-0.5 rounded-full border",
-              currentAmbulance.status === 'idle' 
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-                : "bg-red-500/10 text-red-400 border-red-500/20 animate-pulse"
-            )}>
-              {currentAmbulance.status || 'OFFLINE'}
-            </span>
+            <div className="flex items-center gap-2">
+              {/* Hands-Free Voice Guidance Toggle Button */}
+              <button
+                type="button"
+                onClick={() => voiceGuidance.toggle()}
+                className={cn(
+                  "px-2.5 py-1 rounded-full border text-[10px] font-extrabold uppercase flex items-center gap-1.5 transition-all cursor-pointer shadow-sm",
+                  voiceEnabled
+                    ? "bg-blue-500/20 text-blue-300 border-blue-500/40 hover:bg-blue-500/30"
+                    : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700"
+                )}
+                title={voiceEnabled ? "Voice HUD Active (Tap to mute)" : "Voice HUD Muted (Tap to unmute)"}
+              >
+                {voiceEnabled ? (
+                  <Volume2 className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                )}
+                <span>{voiceEnabled ? "Voice HUD On" : "Voice Muted"}</span>
+              </button>
+              <span className={cn(
+                "text-[10px] font-bold font-mono uppercase px-2.5 py-0.5 rounded-full border",
+                currentAmbulance.status === 'idle' 
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                  : "bg-red-500/10 text-red-400 border-red-500/20 animate-pulse"
+              )}>
+                {currentAmbulance.status || 'OFFLINE'}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
@@ -5669,6 +5736,52 @@ function AmbulanceDashboard({
                 {currentTargetHospitalName}
               </span>
             </div>
+          </div>
+
+          {/* Hands-Free Voice Guidance HUD Prompt Banner */}
+          <div className={cn(
+            "p-3 rounded-xl border flex items-center justify-between text-xs transition-all shadow-md",
+            voiceEnabled 
+              ? "bg-gradient-to-r from-blue-950/60 to-slate-900 border-blue-500/30 text-blue-200"
+              : "bg-slate-900/60 border-slate-800 text-slate-400"
+          )}>
+            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+              <div className={cn(
+                "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border",
+                voiceEnabled 
+                  ? "bg-blue-600/20 border-blue-500/40 text-blue-400" 
+                  : "bg-slate-800 border-slate-700 text-slate-500"
+              )}>
+                {voiceEnabled ? (
+                  <Volume2 className="w-4 h-4 text-blue-400" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-slate-500" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold text-[11px] text-white">Hands-Free Voice HUD</span>
+                  <span className={cn(
+                    "text-[9px] font-mono px-1.5 py-0.2 rounded uppercase font-bold",
+                    voiceEnabled ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-slate-800 text-slate-500"
+                  )}>
+                    {voiceEnabled ? "ACTIVE" : "MUTED"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-300 truncate mt-0.5">
+                  {lastVoicePrompt?.text ? `🔊 "${lastVoicePrompt.text}"` : (voiceEnabled ? "Audio HUD active: automated signal & hospital bay prompts" : "Muted: tap button above to activate audio cues")}
+                </p>
+              </div>
+            </div>
+            {voiceEnabled && (
+              <button
+                type="button"
+                onClick={() => voiceGuidance.speak("Voice HUD audio check. System operating normally.", "test_prompt", 1000, true)}
+                className="text-[10px] font-bold text-blue-300 hover:text-white bg-blue-500/20 hover:bg-blue-500/30 px-2.5 py-1.5 rounded-lg border border-blue-500/30 shrink-0 cursor-pointer transition-colors"
+              >
+                Test Voice
+              </button>
+            )}
           </div>
 
           {activeEmergency && (
