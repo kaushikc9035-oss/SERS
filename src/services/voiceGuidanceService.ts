@@ -33,25 +33,13 @@ class VoiceGuidanceService {
       } catch {}
     }
 
-    // Pre-unlock voices on browser platforms
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    // Pre-unlock voices on browser platforms (non-native only)
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && !Capacitor.isNativePlatform()) {
       try {
         window.speechSynthesis.onvoiceschanged = () => {
-          // Preload voices
           window.speechSynthesis.getVoices();
         };
       } catch {}
-    }
-
-    // Auto-unlock audio and speech engines on the very first user touch or tap
-    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-      const unlockHandler = () => {
-        this.unlockAudio();
-        document.removeEventListener('click', unlockHandler);
-        document.removeEventListener('touchstart', unlockHandler);
-      };
-      document.addEventListener('click', unlockHandler, { passive: true });
-      document.addEventListener('touchstart', unlockHandler, { passive: true });
     }
   }
 
@@ -62,7 +50,11 @@ class VoiceGuidanceService {
     if (this.isAudioUnlocked) return;
     this.isAudioUnlocked = true;
 
-    // 1. Resume AudioContext if suspended
+    if (Capacitor.isNativePlatform()) {
+      // Native Android handles its own audio stream; do not touch web audio
+      return;
+    }
+
     try {
       if (typeof window !== 'undefined') {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -74,13 +66,6 @@ class VoiceGuidanceService {
             this.audioCtx.resume().catch(() => {});
           }
         }
-      }
-    } catch {}
-
-    // 2. Resume Web SpeechSynthesis if present
-    try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.resume();
       }
     } catch {}
   }

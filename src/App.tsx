@@ -3040,7 +3040,7 @@ export default function App() {
   const preemptedSignalsCount = trafficSignals.filter(s => s.status === 'emergency-green').length;
 
   return (
-    <div className="min-h-screen bg-[#070B17] text-slate-100 font-sans selection:bg-red-500/30 selection:text-white">
+    <div className="min-h-screen bg-[#070B17] text-slate-100 font-sans selection:bg-red-500/30 selection:text-white w-full max-w-full overflow-x-hidden">
       {/* Sticky Enterprise Command Navbar */}
       <header className="bg-[#111827]/95 backdrop-blur-md border-b border-[#1F2937] sticky top-0 z-[2000] shadow-2xl w-full max-w-full overflow-hidden box-border">
         <div className="max-w-7xl mx-auto px-2.5 sm:px-4 md:px-6 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-3 w-full min-w-0">
@@ -4668,7 +4668,7 @@ function AmbulanceDashboard({
         }
       }
     }
-  }, [activeEmergency?.id, activeEmergency?.routeCoords, liveLocation?.lat, liveLocation?.lng, currentAmbulance.location.lat, currentAmbulance.location.lng, hospitals, signals]);
+  }, [activeEmergency?.id, activeEmergency?.routeCoords?.length, liveLocation?.lat, liveLocation?.lng, currentAmbulance.location.lat, currentAmbulance.location.lng, hospitals?.length, signals?.length]);
 
   // Trigger deduplicated proximity push notifications to upcoming signals when in active rescue mode
   useEffect(() => {

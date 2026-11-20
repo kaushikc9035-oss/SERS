@@ -12,27 +12,36 @@
   color-scheme: dark;
 }
 
-html, body, #root {
-  overflow-x: hidden;
+html {
   width: 100%;
-  max-width: 100vw;
-  box-sizing: border-box;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   @apply bg-slate-950 text-slate-100;
-  overscroll-behavior-y: none;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  width: 100%;
+  min-height: 100%;
 }
 
 *, *::before, *::after {
   -webkit-tap-highlight-color: transparent;
-}
-
-button, a, input, select, textarea, [role="button"] {
-  touch-action: manipulation;
+  box-sizing: border-box;
 }
 
 /* Custom sleek mobile-friendly scrollbar */
