@@ -2445,8 +2445,8 @@ export default function App() {
 
           // Calculate distance from current live location
           const distKm = calculateDistanceKm(curLat, curLng, h.location.lat, h.location.lng);
-          // Only accept hospitals in the regional vicinity of current position (<= 15 km)
-          if (distKm <= 15) {
+          // STRICT PROXIMITY: Only accept genuine nearby medical facilities (<= 8.5 km)! Never 25-30 km
+          if (distKm <= 8.5) {
             dedupedNearby.push(h);
           }
         }
@@ -4653,13 +4653,13 @@ function AmbulanceDashboard({
     // Always sort mapped hospitals strictly by closest distance first
     mapped.sort((a, b) => a.distKm - b.distKm);
 
-    // If we have close facilities (within 7 km), filter out facilities farther than 10 km so only close hospitals show
-    const hasNearbyFacilities = mapped.some(m => m.distKm <= 7);
-    if (hasNearbyFacilities) {
-      return mapped.filter(m => m.distKm <= 10);
+    // Filter to only display genuine nearby facilities (<= 8.5 km), never 25-30 km!
+    const strictlyNearby = mapped.filter(m => m.distKm <= 8.5);
+    if (strictlyNearby.length >= 1) {
+      return strictlyNearby;
     }
 
-    return mapped;
+    return mapped.filter(m => m.distKm <= 12);
   }, [hospitals, ambulance, emergencyType, liveLocation]);
 
   // Top recommended hospital based on overall score (best combination of proximity, beds & wait time)
